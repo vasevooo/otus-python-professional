@@ -32,13 +32,6 @@ repos:
     hooks:
       - id: uv-export
 
-  # - repo: https://github.com/astral-sh/uv-pre-commit
-  #   # uv version.
-  #   rev: 0.6.12
-  #   hooks:
-  #     # Run the pip compile
-  #     - id: pip-compile
-  #       args: [requirements.in, -o, requirements.txt]
 
 
   - repo: https://github.com/pre-commit/mirrors-mypy

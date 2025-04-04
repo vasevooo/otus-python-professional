@@ -170,8 +170,19 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
-#data folder
-data/
+/data/**/*
+!/data/
+!/data/**/
+!/data/**/.gitkeep
 
-#lessons folder
-lessons/
+/lessons/**/*
+!/lessons/
+!/lessons/**/
+!/lessons/**/.gitkeep
+
+
+# Ignore archives and large data files
+*.zip
+*.tar.gz
+*.csv
+*.parquet
