@@ -32,7 +32,7 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Run Ruff
-        run: ruff check --output-format=github .
+        run: uv run ruff check --output-format=github .
 
       - name: Type check with MyPy
         run: |
