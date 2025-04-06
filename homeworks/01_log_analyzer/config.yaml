@@ -1,3 +1,4 @@
-REPORT_SIZE: 5
-REPORT_DIR: ./reports
-LOG_DIR: ../../data/01_log_analyzer
+REPORT_SIZE: 100
+REPORT_DIR: homeworks/01_log_analyzer/reports
+LOG_DIR: data/01_log_analyzer
+LOG_FILE: homeworks/01_log_analyzer/logs/log.log

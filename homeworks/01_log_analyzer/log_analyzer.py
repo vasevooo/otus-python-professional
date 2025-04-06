@@ -1,9 +1,10 @@
+import logging
 import os
 import re
 import gzip
 from datetime import datetime
 from pathlib import Path
-from typing import Generator, Dict, Any, List, Union
+from typing import Generator, Dict, Any, List, Union, Optional
 from collections import defaultdict
 import statistics
 import json
@@ -12,39 +13,71 @@ import sys
 import structlog
 import yaml
 
+
+def setup_logging(log_file_path: Optional[str] = None) -> None:
+    log_handlers = []
+
+    if log_file_path:
+        log_path = Path(BASE_DIR / log_file_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        log_handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+    # else:
+    #     log_handlers.append(logging.StreamHandler())
+
+    logging.basicConfig(
+        format="%(message)s",
+        handlers=log_handlers,
+        level=logging.INFO,
+    )
+
+    structlog.configure(
+        processors=[
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.add_log_level,
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        cache_logger_on_first_use=True,
+    )
+
+
 log = structlog.get_logger()
 
-
-# log_format ui_short '$remote_addr  $remote_user $http_x_real_ip [$time_local] "$request" '  # noqa: E501
-#                     '$status $body_bytes_sent "$http_referer" '
-#                     '"$http_user_agent" "$http_x_forwarded_for" "$http_X_REQUEST_ID" "$http_X_RB_USER" ' # noqa: E501
-#                     '$request_time';
 
 DEFAULT_CONFIG = {
     "REPORT_SIZE": 1000,
     "REPORT_DIR": "./reports",
     "LOG_DIR": "./logs",
-    "LOG_FILE": "./logs",
 }
 
 
-def resolve_path(path: Union[str, Path]) -> Path:
-    path_str = str(path) if isinstance(path, Path) else path
-    return (Path(__file__).parent / path_str).resolve()
+def find_project_root(start: Path = Path(__file__).parent) -> Path:
+    for parent in start.resolve().parents:
+        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError("Project root not found")
+
+
+BASE_DIR = find_project_root()
+FILE_DIR = Path(__file__).parent.resolve()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="./config.yaml")
+    parser.add_argument("--config", default=FILE_DIR / "config.yaml")
     return parser.parse_args()
 
 
 def load_config(default_config: dict, config_path: str) -> dict:
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file '{config_path}' not found")
+    if not os.path.exists(BASE_DIR / config_path):
+        raise FileNotFoundError(
+            f"Config file at '{BASE_DIR / config_path}' path not found"
+        )
 
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(BASE_DIR / config_path, "r", encoding="utf-8") as f:
             file_config = yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
         raise ValueError(f"Failed to parse YAML config: {e}")
@@ -59,7 +92,7 @@ def get_log_files_paths(log_dir: Union[str, Path]) -> list[str]:
     Get all nginx access log files in the specified directory.
     """
     log_file_name_prefix = "nginx-access-ui"
-    full_log_dir = resolve_path(log_dir)
+    full_log_dir = BASE_DIR / log_dir
 
     if not full_log_dir.exists() or not full_log_dir.is_dir():
         raise FileNotFoundError(f"Log directory '{full_log_dir}' does not exist")
@@ -234,13 +267,13 @@ def generate_report(
     """
     Generate a report from the statistics.
     """
-    template_path = os.path.join(report_dir, "report.html")
+    template_path = os.path.join(BASE_DIR / report_dir, "report.html")
     with open(template_path, "r", encoding="utf-8") as file:
         template = file.read()
         table_data = json.dumps(stats)
         report = template.replace("$table_json", table_data)
         report_path = os.path.join(
-            report_dir, f"report-{last_date.strftime('%Y.%m.%d')}.html"
+            BASE_DIR, report_dir, f"report-{last_date.strftime('%Y.%m.%d')}.html"
         )
         with open(report_path, "w", encoding="utf-8") as file:
             file.write(report)
@@ -248,6 +281,8 @@ def generate_report(
 
 def main() -> None:
     args = parse_args()
+
+    log.info(f"Base directory: {BASE_DIR}, File directory: {FILE_DIR}")
 
     try:
         config = load_config(DEFAULT_CONFIG, args.config)
@@ -257,8 +292,13 @@ def main() -> None:
 
     log.info("Config loaded successfully", config=config)
 
+    setup_logging(config.get("LOG_FILE"))
+    log.info(
+        "Logger initialized", output="file" if config.get("LOG_FILE") else "stdout"
+    )
+
     try:
-        log_files = get_log_files_paths(resolve_path(config["LOG_DIR"]))
+        log_files = get_log_files_paths(config["LOG_DIR"])
         if not log_files:
             log.error("No log files found in the specified directory")
             sys.exit(1)
@@ -275,9 +315,21 @@ def main() -> None:
 
     generator = read_log_file(latest_file)
 
+    report_path = (
+        BASE_DIR
+        / config["REPORT_DIR"]
+        / f"report-{last_date.strftime('%Y.%m.%d')}.html"
+    )
+
     try:
-        stats_from_file = get_statistics_from_log_file(generator, config["REPORT_SIZE"])
-        log.info("Calculated statistics from the latest log file")
+        if report_path.exists():
+            log.info(f"Report file already exists: {report_path}, skipping generation")
+            sys.exit(1)
+        else:
+            stats_from_file = get_statistics_from_log_file(
+                generator, config["REPORT_SIZE"]
+            )
+            log.info("Calculated statistics from the latest log file")
     except Exception as e:
         log.error(f"Failed to get statistics from the latest log file: {e}")
         sys.exit(1)
@@ -291,23 +343,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
-
-
-# test
-# print(get_log_files_paths(config["LOG_DIR"]))
-# last_date, latest_file = get_latest_log_file(get_log_files_paths(config["LOG_DIR"]))
-# generator = read_log_file(latest_file)
-# stats_from_file = get_statistics_from_log_file(generator, 5)
-# print(stats_from_file)
-# generate_report(stats_from_file, config["REPORT_DIR"], last_date)
-# for i in range(5):  # Check first 5 entries
-#     try:
-#         entry = next(generator)
-#         print(f"\nEntry {i+1}:")
-#         for key, value in entry.items():
-#             if key in ['url', 'request_time', 'request', 'status']:
-#                 print(f"  {key}: {value}")
-#     except StopIteration:
-#         print(f"File has fewer than {i+1} entries.")
-#         break
+    try:
+        main()
+    except KeyboardInterrupt:
+        log.error("Execution interrupted by user (Ctrl+C)")
+        sys.exit(130)
+    except Exception:
+        log.exception("Unhandled exception occurred")
+        sys.exit(1)
