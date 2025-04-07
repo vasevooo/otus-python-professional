@@ -42,7 +42,7 @@ make test
 python src/log_analyzer/main.py --config configs/log_analyzer.yaml
 ```
 
-## [Конфигурация](otus_python_professional/configs)
+## [Конфигурация](../../configs/log_analyzer.yaml)
 
 | Опция | Описание | Дефолтное значение |
 |--------|-------------|---------|
