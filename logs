@@ -1,4 +1,0 @@
-{"output": "file", "event": "Logger initialized", "timestamp": "2025-04-06T17:42:17.229939Z", "level": "info"}
-{"event": "Latest log file found: /Users/gpbu50235/otus_python_professional/data/01_log_analyzer/nginx-access-ui.log-20170701.gz, date: 2017-07-01 00:00:00", "timestamp": "2025-04-06T17:42:17.233135Z", "level": "info"}
-{"event": "Calculated statistics from the latest log file", "timestamp": "2025-04-06T17:42:26.421283Z", "level": "info"}
-{"event": "Report generated successfully", "timestamp": "2025-04-06T17:42:26.422559Z", "level": "info"}
