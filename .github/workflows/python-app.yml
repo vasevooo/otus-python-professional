@@ -29,7 +29,9 @@ jobs:
             python-version-file: "pyproject.toml"
             
       - name: Install the project
-        run: uv sync --all-extras --dev
+        run: |
+          uv sync --all-extras --dev
+          uv run pip install -e .
 
       - name: Run Ruff
         run: uv run ruff check --output-format=github .
