@@ -22,8 +22,6 @@ def setup_logging(log_file_path: Optional[str] = None) -> None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         log_handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
-    # else:
-    #     log_handlers.append(logging.StreamHandler())
 
     logging.basicConfig(
         format="%(message)s",
