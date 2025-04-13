@@ -4,6 +4,33 @@ from pathlib import Path
 import re
 from common.paths import BASE_DIR
 from typing import Any, Dict, Generator, Union
+from common.logging import setup_pre_logging
+import structlog
+
+setup_pre_logging()
+log = structlog.get_logger()
+
+# Regex pattern to parse nginx logs
+LOG_PATTERN = re.compile(
+    r"(?P<remote_addr>[\d\.]+)\s+"
+    r"(?P<remote_user>[^ ]*)\s+"
+    r"(?P<http_x_real_ip>[^ ]*)\s+"
+    r"\[(?P<time_local>.*?)\]\s+"
+    r'"(?P<request>.*?)"\s+'
+    r"(?P<status>\d+)\s+"
+    r"(?P<body_bytes_sent>\d+)\s+"
+    r'"(?P<http_referer>.*?)"\s+'
+    r'"(?P<http_user_agent>.*?)"\s+'
+    r'"(?P<http_x_forwarded_for>.*?)"\s+'
+    r'"(?P<http_x_request_id>.*?)"\s+'
+    r'"(?P<http_x_rb_user>.*?)"\s+'
+    r"(?P<request_time>[\d\.]+)"
+)
+
+# Regex to extract URL from request field
+REQUEST_URL_PATTERN = re.compile(
+    r"^(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+)"
+)
 
 
 def get_log_files_paths(log_dir: Union[str, Path]) -> list[str]:
@@ -63,27 +90,6 @@ def read_log_file(log_file_path: str) -> Generator[Dict[str, Any], None, None]:
 
     Yields parsed log entries as dictionaries with focus on URL and request_time.
     """
-    # Regex pattern to parse nginx logs
-    log_pattern = re.compile(
-        r"(?P<remote_addr>[\d\.]+)\s+"
-        r"(?P<remote_user>[^ ]*)\s+"
-        r"(?P<http_x_real_ip>[^ ]*)\s+"
-        r"\[(?P<time_local>.*?)\]\s+"
-        r'"(?P<request>.*?)"\s+'
-        r"(?P<status>\d+)\s+"
-        r"(?P<body_bytes_sent>\d+)\s+"
-        r'"(?P<http_referer>.*?)"\s+'
-        r'"(?P<http_user_agent>.*?)"\s+'
-        r'"(?P<http_x_forwarded_for>.*?)"\s+'
-        r'"(?P<http_x_request_id>.*?)"\s+'
-        r'"(?P<http_x_rb_user>.*?)"\s+'
-        r"(?P<request_time>[\d\.]+)"
-    )
-
-    # Regex to extract URL from request field
-    request_url_pattern = re.compile(
-        r"^(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\s+(?P<url>[^\s]+)"
-    )
 
     # Determine file opener based on extension
     is_gzipped = log_file_path.endswith(".gz")
@@ -99,7 +105,7 @@ def read_log_file(log_file_path: str) -> Generator[Dict[str, Any], None, None]:
                         continue
 
                     # Parse log line
-                    match = log_pattern.match(line)
+                    match = LOG_PATTERN.match(line)
                     if not match:
                         # Unparseable line - log or skip
                         continue
@@ -108,7 +114,7 @@ def read_log_file(log_file_path: str) -> Generator[Dict[str, Any], None, None]:
 
                     # Extract URL from request
                     request = log_entry.get("request", "")
-                    url_match = request_url_pattern.match(request)
+                    url_match = REQUEST_URL_PATTERN.match(request)
                     if url_match:
                         url = url_match.group("url")
                     else:
@@ -122,10 +128,11 @@ def read_log_file(log_file_path: str) -> Generator[Dict[str, Any], None, None]:
 
                     yield log_entry
 
-                except Exception as e:
-                    print(f"Error parsing line {line_number}: {e}")
+                except (ValueError, KeyError) as e:
+                    log.error("Error parsing line", error=e, line_number=line_number)
                     continue
 
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
         # File-level error handling
-        print(f"Error processing file {log_file_path}: {e}")
+        log.error("Error processing file", error=e, file_path=log_file_path)
+        raise

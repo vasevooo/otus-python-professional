@@ -71,8 +71,8 @@ def main() -> None:
     except KeyboardInterrupt:
         log.error("Execution interrupted by user")
         sys.exit(130)
-    except Exception:
-        log.exception("Unexpected error")
+    except Exception as e:
+        log.exception("Unexpected error", error=e)
         sys.exit(1)
 
 
