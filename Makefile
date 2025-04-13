@@ -35,3 +35,6 @@ clean:
 	find . -type d -name "__pycache__" -exec rm -r {} +
 	find . -type f -name "*.pyc" -delete
 	rm -rf .pytest_cache
+
+typing:
+	docker run --rm -v $(PWD):/app -w /app python:3.12 sh -c "pip install mypy && mypy src/typing_challenges"
