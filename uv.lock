@@ -96,9 +96,10 @@ wheels = [
 [[package]]
 name = "otus-python-professional"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "pytest" },
+    { name = "structlog" },
 ]
 
 [package.optional-dependencies]
@@ -114,6 +115,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pytest" },
     { name = "ruff", marker = "extra == 'dev'" },
+    { name = "structlog" },
 ]
 provides-extras = ["dev"]
 
@@ -215,6 +217,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/51/a2/6878e74efef39cb0996342c48918aff9a9f5632d8d40c307610688d382ae/ruff-0.11.3-py3-none-win32.whl", hash = "sha256:73d8b90d12674a0c6e98cd9e235f2dcad09d1a80e559a585eac994bb536917a3", size = 10306265 },
     { url = "https://files.pythonhosted.org/packages/95/95/30646e735a201266ec93504a8640190e4a47a9efb10990cb095bf1111c3a/ruff-0.11.3-py3-none-win_amd64.whl", hash = "sha256:faf1bfb0a51fb3a82aa1112cb03658796acef978e37c7f807d3ecc50b52ecbf6", size = 11403990 },
     { url = "https://files.pythonhosted.org/packages/cd/2e/d04d606d0b13c2c8188111a4ff9a99811c40fe170e1523e20f13cf85235e/ruff-0.11.3-py3-none-win_arm64.whl", hash = "sha256:67f8b68d7ab909f08af1fb601696925a89d65083ae2bb3ab286e572b5dc456aa", size = 10525855 },
+]
+
+[[package]]
+name = "structlog"
+version = "25.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/b8/d3670aec25747e32d54cd5258102ae0d69b9c61c79e7aa326be61a570d0d/structlog-25.2.0.tar.gz", hash = "sha256:d9f9776944207d1035b8b26072b9b140c63702fd7aa57c2f85d28ab701bd8e92", size = 1367438 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/eb/244741c1abf7b4092686db0798a4c43491298f40ddec4226f5c4f6b5d3eb/structlog-25.2.0-py3-none-any.whl", hash = "sha256:0fecea2e345d5d491b72f3db2e5fcd6393abfc8cd06a4851f21fcd4d1a99f437", size = 68448 },
 ]
 
 [[package]]
