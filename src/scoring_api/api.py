@@ -3,6 +3,7 @@
 
 import json
 import datetime
+from dateutil.relativedelta import relativedelta
 import logging
 import hashlib
 import uuid
@@ -33,6 +34,11 @@ GENDERS = {
     MALE: "male",
     FEMALE: "female",
 }
+DATE_FORMAT = "%d.%m.%Y"
+
+
+class ValidationError(ValueError):
+    pass
 
 
 class Field:
@@ -40,37 +46,94 @@ class Field:
         self.required = required
         self.nullable = nullable
 
+    def validate(self, value):
+        raise NotImplementedError
+
 
 class CharField(Field):
-    pass
+    def validate(self, value):
+        if not isinstance(value, str):
+            raise ValidationError("Value should be a string")
 
 
 class ArgumentsField(Field):
-    pass
+    def validate(self, value):
+        if not isinstance(value, dict):
+            raise ValidationError("Value must be a dictionary (JSON object)")
 
 
 class EmailField(CharField):
-    pass
+    def validate(self, value):
+        super().validate(value)
+
+        parts = value.split("@")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValidationError("Email must be in the format 'localpart@domainpart'")
 
 
 class PhoneField(Field):
-    pass
+    def validate(self, value):
+        if not isinstance(value, (str, int)):
+            raise ValidationError("Phone must be a string or an integer")
+
+        phone_num = str(value)
+
+        if len(phone_num) != 11:
+            raise ValidationError("Phone must be contain exactly 11 digits")
+
+        if not phone_num.startswith("7"):
+            raise ValidationError("Phone number must start with digit 7")
 
 
 class DateField(Field):
-    pass
+    def validate(self, value):
+        if not isinstance(value, str):
+            raise ValidationError("Date must be a string")
+
+        try:
+            datetime.strptime(value, DATE_FORMAT)
+        except ValueError:
+            raise ValidationError(
+                f"Date must be in the format '{DATE_FORMAT}' (e.g., 'dd.mm.yyyy')"
+            )
 
 
-class BirthDayField(Field):
-    pass
+class BirthDayField(DateField):
+    def validate(self, value):
+        super().validate(value)
+
+        try:
+            bitrhday_dt = datetime.strptime(value, DATE_FORMAT)
+        except ValueError:
+            raise ValidationError(f"Invalid birthday date format: {value}")
+
+        today = datetime.date.today()
+        seventy_years_ago = today - relativedelta(year=70)
+
+        if bitrhday_dt.date() <= seventy_years_ago:
+            raise ValidationError(
+                "Age must be less than 70 years (birthday cannot be 70 years ago or earlier)"
+            )
 
 
 class GenderField(Field):
-    pass
+    def validate(self, value):
+        if value not in GENDERS:
+            raise ValidationError(
+                "Gender must be one of 0 (Unknown), 1 (Male), or 2 (Female)"
+            )
 
 
 class ClientIDsField(Field):
-    pass
+    def validate(self, value):
+        if not isinstance(value, list):
+            raise ValidationError("Client IDs must be a list")
+
+        if not value:  # An empty list evaluates to False
+            raise ValidationError("Client IDs list cannot be empty")
+
+        if not all(isinstance(element, int) for element in value):
+            raise ValidationError("All elements in Client IDs list must be integers")
 
 
 class ClientsInterestsRequest(object):
