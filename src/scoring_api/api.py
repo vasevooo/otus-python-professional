@@ -352,11 +352,11 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
                 request_body = json.loads(data_string)
             else:
                 code = BAD_REQUEST
-                logging.warning(f"Empty request body received. {context['request_id']}")
+                logging.error(f"Empty request body received. {context['request_id']}")
 
         except (json.JSONDecodeError, ValueError):  # More specific exceptions
             code = BAD_REQUEST
-            logging.warning(f"Failed to parse JSON. {context['request_id']}")
+            logging.error(f"Failed to parse JSON. {context['request_id']}")
         except Exception as e:
             # Catch other potential errors during read/parse
             code = INTERNAL_ERROR
