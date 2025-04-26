@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import json
-import datetime
+from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import logging
 import hashlib
 import uuid
 from argparse import ArgumentParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from scoring_api.scoring import get_score, get_interests
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
@@ -48,6 +49,9 @@ class Field:
 
     def validate(self, value):
         raise NotImplementedError
+
+    def __str__(self):
+        return f"Field(required={self.required}, nullable={self.nullable})"
 
 
 class CharField(Field):
@@ -107,9 +111,8 @@ class BirthDayField(DateField):
         except ValueError:
             raise ValidationError(f"Invalid birthday date format: {value}")
 
-        today = datetime.date.today()
-        seventy_years_ago = today - relativedelta(year=70)
-
+        today = date.today()
+        seventy_years_ago = today - relativedelta(years=70)
         if bitrhday_dt.date() <= seventy_years_ago:
             raise ValidationError(
                 "Age must be less than 70 years (birthday cannot be 70 years ago or earlier)"
@@ -136,12 +139,74 @@ class ClientIDsField(Field):
             raise ValidationError("All elements in Client IDs list must be integers")
 
 
-class ClientsInterestsRequest(object):
+class BaseRequest(object):
+    def __init__(self, data):
+        self.errors = {}
+        self._raw_data = data or {}
+
+        fields = []
+        for name, obj in self.__class__.__dict__.items():
+            if isinstance(obj, Field):
+                fields.append((name, obj))
+
+        for field_name, field_instance in fields:
+            value = data.get(field_name)
+
+            if field_name not in data:
+                if field_instance.required:
+                    self.errors[field_name] = "This field is requeired"
+                continue
+
+            if value is None:
+                if not field_instance.nullable:
+                    self.errors[field_name] = "This field cannot be null"
+                continue
+
+            try:
+                field_instance.validate(value)
+                setattr(self, field_name, value)
+            except ValidationError as e:
+                self.errors[field_name] = str(e)
+
+        if not self.errors:
+            self.post_validate()
+
+    def post_validate(self):
+        """
+        Hook method for subclasses to implement cross-field validation.
+        This is called only if individual field validation passes.
+        Access validated data via self attributes (e.g., self.phone).
+        Add errors to self.errors if validation fails.
+        """
+        pass
+
+    @property
+    def is_valid(self):
+        """Checks if the request passed validation."""
+        return not self.errors
+
+    def get_errors(self):
+        """Returns a dictionary of validation errors."""
+        return self.errors
+
+    def get_non_empty_fields(self):
+        """Helper to get fields that were present and not None"""
+        non_empty = []
+        for name, obj in self.__class__.__dict__.items():
+            if isinstance(obj, Field):
+                if name in self.__dict__:
+                    value = self.__dict__[name]
+                    if value is not None and value != "" and value != []:
+                        non_empty.append(name)
+        return non_empty
+
+
+class ClientsInterestsRequest(BaseRequest):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
 
-class OnlineScoreRequest(object):
+class OnlineScoreRequest(BaseRequest):
     first_name = CharField(required=False, nullable=True)
     last_name = CharField(required=False, nullable=True)
     email = EmailField(required=False, nullable=True)
@@ -149,8 +214,25 @@ class OnlineScoreRequest(object):
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
 
+    def post_validate(self):
+        has_phone = "phone" in self.__dict__
+        has_email = "email" in self.__dict__
+        has_fname = "first_name" in self.__dict__
+        has_lname = "last_name" in self.__dict__
+        has_bday = "birthday" in self.__dict__
+        has_gender = "gender" in self.__dict__
 
-class MethodRequest(object):
+        pair_1 = has_phone and has_email
+        pair_2 = has_fname and has_lname
+        pair_3 = has_gender and has_bday
+
+        if not (pair_1 or pair_2 or pair_3):
+            self.errors["arguments"] = (
+                "At least one pair is required: (phone, email), (first_name, last_name), or (birthday, gender)."
+            )
+
+
+class MethodRequest(BaseRequest):
     account = CharField(required=False, nullable=True)
     login = CharField(required=True, nullable=True)
     token = CharField(required=True, nullable=True)
@@ -162,20 +244,92 @@ class MethodRequest(object):
         return self.login == ADMIN_LOGIN
 
 
-def check_auth(request):
+def check_auth(request: MethodRequest):
+    login = getattr(request, "login", None)
+    account = getattr(request, "account", None)
+    token = getattr(request, "token", None)
+
+    if login is None or token is None:
+        return False
+
     if request.is_admin:
         digest = hashlib.sha512(
-            (datetime.datetime.now().strftime("%Y%m%d%H") + ADMIN_SALT).encode("utf-8")
+            (datetime.now().strftime("%Y%m%d%H") + ADMIN_SALT).encode("utf-8")
         ).hexdigest()
     else:
+        account_str = account if account is not None else ""
         digest = hashlib.sha512(
-            (request.account + request.login + SALT).encode("utf-8")
+            (account_str + login + SALT).encode("utf-8")
         ).hexdigest()
-    return digest == request.token
+    return digest == token
 
 
 def method_handler(request, ctx, store):
     response, code = None, None
+
+    # 1. Validate the base request structure
+    method_req = MethodRequest(request.get("body"))
+    if not method_req.is_valid:
+        first_error = list(method_req.get_errors().items())[0]
+        error_msg = f"Validation Error in field '{first_error[0]}': {first_error[1]}"
+        return error_msg, INVALID_REQUEST  # 422
+
+    # 2. Check auth
+    if not check_auth(method_req):
+        return ERRORS[FORBIDDEN], FORBIDDEN  # 403
+
+    # 3. Process based on method name
+    method_name = method_req.method
+    arguments = method_req.arguments
+
+    if method_name == "online_score":
+        score_req = OnlineScoreRequest(arguments)
+        if not score_req.is_valid:
+            first_error = list(score_req.get_errors().items())[0]
+            error_msg = f"Validation Error in arguments for '{method_name}': Field '{first_error[0]}' - {first_error[1]}"
+            return error_msg, INVALID_REQUEST  # 422
+
+        ctx["has"] = score_req.get_non_empty_fields()
+
+        # Get score (handle admin case)
+        if method_req.is_admin:
+            response = {"score": 42}
+        else:
+            score = get_score(
+                store=store,
+                phone=getattr(score_req, "phone", None),
+                email=getattr(score_req, "email", None),
+                birthday=getattr(score_req, "birthday", None),
+                gender=getattr(score_req, "gender", None),
+                first_name=getattr(score_req, "first_name", None),
+                last_name=getattr(score_req, "last_name", None),
+            )
+            response = {"score": score}
+        code = OK  # 200
+
+    elif method_name == "clients_interests":
+        interest_req = ClientsInterestsRequest(arguments)
+        if not interest_req.is_valid:
+            first_error = list(interest_req.get_errors().items())[0]
+            error_msg = f"Validation Error in arguments for '{method_name}': Field '{first_error[0]}' - {first_error[1]}"
+            return error_msg, INVALID_REQUEST  # 422
+
+        ctx["nclients"] = len(interest_req.client_ids)
+
+        # Get score (handle admin case)
+        if method_req.is_admin:
+            response = {"score": 42}
+
+        # Get interests
+        interests = {}
+        for cid in interest_req.client_ids:
+            interests[str(cid)] = get_interests(store=store, cid=cid)
+        response = interests
+        code = OK  # 200
+
+    else:
+        return "Method not found", NOT_FOUND  # 404
+
     return response, code
 
 
@@ -189,24 +343,41 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         response, code = {}, OK
         context = {"request_id": self.get_request_id(self.headers)}
-        request = None
+        request_body = None
+        data_string = ""
         try:
-            data_string = self.rfile.read(int(self.headers["Content-Length"]))
-            request = json.loads(data_string)
-        except Exception:
-            code = BAD_REQUEST
+            content_length = int(self.headers.get("Content-Length", 0))
+            if content_length > 0:
+                data_string = self.rfile.read(content_length)
+                request_body = json.loads(data_string)
+            else:
+                code = BAD_REQUEST
+                logging.warning(f"Empty request body received. {context['request_id']}")
 
-        if request:
+        except (json.JSONDecodeError, ValueError):  # More specific exceptions
+            code = BAD_REQUEST
+            logging.warning(f"Failed to parse JSON. {context['request_id']}")
+        except Exception as e:
+            # Catch other potential errors during read/parse
+            code = INTERNAL_ERROR
+            logging.exception(
+                f"Error reading/parsing request body: {e}. {context['request_id']}"
+            )
+
+        if request_body is not None and code == OK:
             path = self.path.strip("/")
             logging.info("%s: %s %s" % (self.path, data_string, context["request_id"]))
             if path in self.router:
                 try:
                     response, code = self.router[path](
-                        {"body": request, "headers": self.headers}, context, self.store
+                        {"body": request_body, "headers": self.headers},
+                        context,
+                        self.store,
                     )
                 except Exception as e:
                     logging.exception("Unexpected error: %s" % e)
                     code = INTERNAL_ERROR
+                    response = "Internal Server Error"
             else:
                 code = NOT_FOUND
 
@@ -216,7 +387,12 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         if code not in ERRORS:
             r = {"response": response, "code": code}
         else:
-            r = {"error": response or ERRORS.get(code, "Unknown Error"), "code": code}
+            error_msg = (
+                response
+                if isinstance(response, str)
+                else ERRORS.get(code, "Unknown Error")
+            )
+            r = {"error": error_msg, "code": code}
         context.update(r)
         logging.info(context)
         self.wfile.write(json.dumps(r).encode("utf-8"))
