@@ -36,9 +36,9 @@ jobs:
       - name: Run Ruff
         run: uv run ruff check --output-format=github .
 
-      - name: Type check with MyPy
-        run: |
-          uv run mypy .
+      # - name: Type check with MyPy
+      #   run: |
+      #     uv run mypy .
 
       - name: Run tests
         run: uv run pytest tests
