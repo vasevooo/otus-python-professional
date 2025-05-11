@@ -8,7 +8,9 @@ dependencies = [
     "commit>=0.1.0",
     "pre>=1.3.0",
     "pytest",
+    "pytest-redis>=3.1.3",
     "python-dateutil>=2.9.0.post0",
+    "redis>=6.0.0",
     "structlog",
 ]
 
@@ -45,3 +47,14 @@ where = ["src"]
 dev = [
     "pre-commit>=4.2.0",
 ]
+
+[tool.pytest.ini_options]
+markers = ["unit: marks tests as unit tests",
+    "integration: marks tests as integration tests"
+]
+addopts = "-v --basetemp=/tmp/pytest"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+redis_decode = true
