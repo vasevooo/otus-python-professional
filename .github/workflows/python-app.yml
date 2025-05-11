@@ -28,6 +28,13 @@ jobs:
         with:
             python-version-file: "pyproject.toml"
 
+
+      - name: Install Redis
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server
+          sudo service redis-server start
+
       - name: Install the project
         run: |
           uv sync --all-extras --dev

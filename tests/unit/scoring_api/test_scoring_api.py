@@ -2,8 +2,11 @@ import hashlib
 import datetime
 import functools
 import unittest
+import pytest
+import json
 
 import scoring_api.api as api
+from scoring_api.scoring import Store
 
 
 def cases(cases):
@@ -20,14 +23,19 @@ def cases(cases):
 
 
 class TestSuite(unittest.TestCase):
-    def setUp(self):
+    @pytest.fixture(autouse=True)
+    def setup_redis(self, redisdb):
         self.context = {}
         self.headers = {}
         self.settings = {}
+        self.store = Store(redis_client=redisdb)
 
     def get_response(self, request):
         return api.method_handler(
-            {"body": request, "headers": self.headers}, self.context, self.settings
+            {"body": request, "headers": self.headers},
+            self.context,
+            store=self.store,
+            **self.settings,
         )
 
     def set_valid_auth(self, request):
@@ -224,6 +232,10 @@ class TestSuite(unittest.TestCase):
         ]
     )
     def test_ok_interests_request(self, arguments):
+        for client_id in arguments["client_ids"]:
+            test_interests = ["books", "music", "sports"]
+            self.store.redis.set(f"i:{client_id}", json.dumps(test_interests))
+
         request = {
             "account": "horns&hoofs",
             "login": "h&f",

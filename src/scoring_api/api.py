@@ -264,7 +264,7 @@ def check_auth(request: MethodRequest):
     return digest == token
 
 
-def method_handler(request, ctx, store):
+def method_handler(request, ctx, store, **kwargs):
     response, code = None, None
 
     # 1. Validate the base request structure
